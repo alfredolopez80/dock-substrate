@@ -7,6 +7,7 @@ members = [
     'pallets/democracy',
     'pallets/simple_democracy',
     'pallets/core_mods',
+    'pallets/fiat_filter',
     'runtime',
 ]
 
