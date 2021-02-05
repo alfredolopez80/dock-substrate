@@ -16,7 +16,9 @@ use frame_support::{
     dispatch::{DispatchResult, DispatchResultWithPostInfo, Dispatchable},
     ensure,
     sp_runtime::{DispatchError, Perbill},
-    traits::{Currency, ExistenceRequirement, Get, UnfilteredDispatchable, WithdrawReasons},
+    traits::{
+        Currency, ExistenceRequirement, Get, IsSubType, UnfilteredDispatchable, WithdrawReasons,
+    },
     weights::{GetDispatchInfo, Pays},
     Parameter,
 };
@@ -49,6 +51,7 @@ pub trait Config: system::Config + did::Trait {
     /// The dispatchable that master may call as Root. It is possible to use another type here, but
     /// it's expected that your runtime::Call will be used.
     type Call: Parameter + Dispatchable<Origin = Self::Origin> + GetDispatchInfo;
+    // + IsSubType<DIDModule<Self>>;
     type Currency: Currency<Self::AccountId>;
 }
 
@@ -113,7 +116,10 @@ decl_error! {
 // The module's callable functions (Dispatchable functions)
 // Dispatchable functions must be annotated with a weight and must return a DispatchResult.
 decl_module! {
-    pub struct Module<T: Config> for enum Call where origin: T::Origin {
+    pub struct Module<T: Config> for enum Call where
+        origin: T::Origin,
+        // <T as system::Config>::Call: IsSubType<Call<T>>,
+    {
         // // Errors must be initialized if they are used by the pallet.
         // type Error = Error<T>;
         // Events must be initialized if they are used by the pallet.
@@ -178,14 +184,37 @@ decl_module! {
 type BalanceOf<T> =
     <<T as Config>::Currency as Currency<<T as system::Config>::AccountId>>::Balance;
 // private helper functions
-impl<T: Config> Module<T> {
-    fn compute_call_fee_(call: &Box<<T as Config>::Call>) -> Result<u64, &'static str> {
+impl<T: Config> Module<T>
+where
+    <T as Config>::Call: IsSubType<Call<T>>,
+{
+    fn compute_call_fee_(call: &<T as Config>::Call) -> Result<u64, &'static str> {
         // TODO get type of call
+        let dispatch_info = call.get_dispatch_info();
+        let weight = dispatch_info.weight;
+        if let Some(local_call) = call.is_sub_type() {
+            match local_call {
+                Call::remove(_, _) => (),
+                // Call::<Self>::new_registry(_, _) => (),
+                // <T as Config>::Call::DID => (),
+                // Call::DID => (),
+                // did::Call::<T>::remove(_, _) => (),
+                // Migrator can make only these 2 calls without paying fees
+                // Call::migrate(..) | Call::give_bonuses(..) => {
+                //     if !<Migrators<T>>::contains_key(who) {
+                //         // If migrator not registered, don't include transaction in block
+                //         return InvalidTransaction::Custom(1).into();
+                //     }
+                // }
+                _ => (),
+            }
+        }
 
         // match type: get USD price
         // let fee_usdcent = match call_type {
         //     _ => 50,
         // };
+
         // convert to DOCKs
         // TODO check conversion to f64 and division
         // let fee_dock: T::Balance = fee_usdcent as f64.checked_div(Self::dock_fiat_rate() as f64) // TODO safe math and type conversion
