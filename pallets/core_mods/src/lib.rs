@@ -32,4 +32,4 @@ pub mod revoke;
 mod benchmark_utils;
 
 #[cfg(test)]
-mod test_common;
+pub mod test_common;

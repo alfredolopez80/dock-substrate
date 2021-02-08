@@ -1,7 +1,8 @@
 // // use crate::{Module,Trait,Error};
 use crate::*;
 use codec::{Decode, Encode};
-use core_mods::did;
+use core_mods::{did, anchor};
+
 use frame_support::dispatch::Dispatchable;
 use frame_support::weights::Weight;
 use frame_support::{impl_outer_dispatch, impl_outer_event, impl_outer_origin, parameter_types};
@@ -12,16 +13,20 @@ use sp_runtime::{
     traits::{BlakeTwo256, IdentityLookup},
     Perbill,
 };
+use sp_core::{sr25519, Pair};
+use rand::random;
 
 impl_outer_origin! {
     pub enum Origin for Test where system = frame_system {}
 }
 type System = frame_system::Module<Test>;
 type DIDModule = did::Module<Test>;
+type AnchorModule = anchor::Module<Test>;
 impl_outer_dispatch! {
     pub enum TestCall for Test where origin: Origin {
         system::System,
         did::DIDModule,
+        anchor::AnchorModule,
     }
 }
 // mod fiat_filter {
@@ -69,6 +74,11 @@ impl Config for Test {
 impl did::Trait for Test {
     type Event = ();
 }
+
+impl anchor::Trait for Test {
+    type Event = ();
+}
+
 parameter_types! {
     pub const ExistentialDeposit: u64 = 1;
 }
@@ -95,6 +105,11 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
         .build_storage::<Test>()
         .unwrap()
         .into()
+}
+
+/// generate a random keypair
+pub fn gen_kp() -> sr25519::Pair {
+    sr25519::Pair::generate_with_phrase(None).0
 }
 
 // TESTS
@@ -124,5 +139,31 @@ fn root_set_update_freq__Err_NotRoot() {
             // Error::<Test>::NoneValue
             DispatchError::BadOrigin
         );
+    });
+}
+
+#[test]
+fn making_a_did_call() {
+    new_test_ext().execute_with(|| {
+        let d: did::Did = rand::random();
+        let kp = gen_kp();
+        let call = TestCall::DIDModule(did::Call::<Test>::new(d.clone(), did::KeyDetail::new(d,
+                did::PublicKey::Sr25519(did::Bytes32 {
+                    value: kp.public().0,
+                }),
+            )
+        ));
+        FiatFilterModule::execute_call(Origin::signed(1), Box::new(call.clone())).unwrap();
+
+    });
+}
+
+#[test]
+fn making_an_anchor_call() {
+    new_test_ext().execute_with(|| {
+        let dat = (0..32).map(|_| rand::random()).collect();
+        let call = TestCall::AnchorModule(anchor::Call::<Test>::deploy(dat));
+        FiatFilterModule::execute_call(Origin::signed(1), Box::new(call.clone())).unwrap();
+
     });
 }

@@ -11,8 +11,9 @@
 //     Parameter,
 // };
 use core_mods::did;
+use core_mods::anchor;
 use frame_support::{
-    decl_error, decl_event, decl_module, decl_storage,
+    decl_error, decl_event, decl_module, decl_storage, runtime_print,
     dispatch::{DispatchResult, DispatchResultWithPostInfo, Dispatchable, CallMetadata, GetCallMetadata},
     ensure,
     sp_runtime::{DispatchError, Perbill},
@@ -23,6 +24,8 @@ use frame_support::{
     Parameter,
 };
 use frame_system::{self as system, ensure_root, ensure_signed};
+use core_mods::did::KeyDetail;
+use sp_std::fmt::Debug;
 
 #[cfg(test)]
 #[allow(non_snake_case)]
@@ -43,14 +46,14 @@ pub trait UpdaterDockFiatRate {
 //     type UpdaterDockFiatRate: UpdaterDockFiatRate;
 //     // type BlockNumber: Get<<Self as frame_system::Config>::BlockNumber>;
 // }
-pub trait Config: system::Config + did::Trait {
+pub trait Config: system::Config + did::Trait + anchor::Trait {
     /// Because this pallet emits events, it depends on the runtime's definition of an event.
     type Event: From<Event<Self>> + Into<<Self as system::Config>::Event>;
     /// Config option for updating the DockFiatRate
     type UpdaterDockFiatRate: UpdaterDockFiatRate;
     /// The dispatchable that master may call as Root. It is possible to use another type here, but
     /// it's expected that your runtime::Call will be used.
-    type Call: Parameter + Dispatchable<Origin = Self::Origin> + GetDispatchInfo + GetCallMetadata;
+    type Call: Parameter + Dispatchable<Origin = Self::Origin> + GetDispatchInfo + GetCallMetadata + IsSubType<did::Call<Self>> + IsSubType<anchor::Call<Self>>;
     // + IsSubType<DIDModule<Self>>;
     type Currency: Currency<Self::AccountId>;
 }
@@ -139,7 +142,7 @@ decl_module! {
             }
 
             // TODO calculate fee based on type of call
-            // let fee = Self::compute_call_fee_(&call)?;
+            let fee = Self::compute_call_fee_(&call)?;
             // TODO deduct fees based on Currency::Withdraw
             // Self::charge_fees_(sender, fee)?;
 
@@ -186,16 +189,66 @@ type BalanceOf<T> =
     <<T as Config>::Currency as Currency<<T as system::Config>::AccountId>>::Balance;
 // private helper functions
 impl<T: Config> Module<T>
-where
-    <T as Config>::Call: IsSubType<Call<T>>,
+// where
+//     <T as Config>::Call: IsSubType<Call<T>>,
 {
     fn compute_call_fee_(call: &<T as Config>::Call) -> Result<u64, &'static str> {
         // TODO get type of call
         let dispatch_info = call.get_dispatch_info();
         let weight = dispatch_info.weight;
+        // let call: &<T as Config>::Call = <T as Config>::Call::from_ref(call);
         // Get the pallet name and function name
         let metadata = call.get_call_metadata();
+
         // TODO: Get arguments
+        /*if let (a, b) = did::Call::new(d, det) {
+            sp_runtime::print("something matched");
+        }*/
+        /*if let did::Call::new(d, det) = call {
+            sp_runtime::print("something matched");
+        }*/
+        runtime_print!("{:?}", &call);
+        println!("{:?}", &call);
+
+        // TODO: Unless i find a better way, will need a flag to track if anything matched the call
+
+        match call.is_sub_type() {
+            Some(did::Call::new(d, k)) => {
+                sp_runtime::print("DID new match");
+                println!("DID new match");
+                runtime_print!("DID new match {:?}", call);
+                // call
+            },
+            _ => (),
+        };
+
+        match call.is_sub_type() {
+            Some(anchor::Call::deploy(b)) => {
+                sp_runtime::print("Anchor deploy match");
+                println!("Anchor deploy match. Data length is {}", b.len());
+                runtime_print!("Anchor deploy match {:?}", call);
+                // call
+            },
+            _ => (),
+        };
+
+        /*let c2 = match *call1 {
+            Call::anchor::Call::deploy(d) => {
+                runtime_print!("Second match {:?}", d);
+            },
+            Call::did::Call::new(d, k) => {
+                runtime_print!("Second match {:?}", d);
+            },
+            _ => unimplemented!()
+        };*/
+
+        /*if let Some(local_call) = call.is_sub_type() {
+            match local_call {
+                did::Call::<T>::remove(_, _) => (),
+                _ => (),
+            }
+        }*/
+
         // let _ = did::Call::new(..);
         // if (!matches!(call, <T as Config>::Call(did::Call::new(..)))) {
         /*if (matches!(call, did::Call::new(..) ) ) {
