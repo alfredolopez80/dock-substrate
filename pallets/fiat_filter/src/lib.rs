@@ -53,7 +53,7 @@ pub trait Config: system::Config + did::Trait + anchor::Trait {
     type UpdaterDockFiatRate: UpdaterDockFiatRate;
     /// The dispatchable that master may call as Root. It is possible to use another type here, but
     /// it's expected that your runtime::Call will be used.
-    type Call: Parameter + Dispatchable<Origin = Self::Origin> + GetDispatchInfo + GetCallMetadata + IsSubType<did::Call<Self>> + IsSubType<anchor::Call<Self>>;
+    type Call: Parameter + Dispatchable<Origin = Self::Origin> + GetDispatchInfo + IsSubType<did::Call<Self>> + IsSubType<anchor::Call<Self>>;
     // + IsSubType<DIDModule<Self>>;
     type Currency: Currency<Self::AccountId>;
 }
@@ -189,8 +189,6 @@ type BalanceOf<T> =
     <<T as Config>::Currency as Currency<<T as system::Config>::AccountId>>::Balance;
 // private helper functions
 impl<T: Config> Module<T>
-// where
-//     <T as Config>::Call: IsSubType<Call<T>>,
 {
     fn compute_call_fee_(call: &<T as Config>::Call) -> Result<u64, &'static str> {
         // TODO get type of call
@@ -198,7 +196,6 @@ impl<T: Config> Module<T>
         let weight = dispatch_info.weight;
         // let call: &<T as Config>::Call = <T as Config>::Call::from_ref(call);
         // Get the pallet name and function name
-        let metadata = call.get_call_metadata();
 
         // TODO: Get arguments
         /*if let (a, b) = did::Call::new(d, det) {
@@ -211,26 +208,34 @@ impl<T: Config> Module<T>
         println!("{:?}", &call);
 
         // TODO: Unless i find a better way, will need a flag to track if anything matched the call
+        let mut found = false;
 
-        match call.is_sub_type() {
-            Some(did::Call::new(d, k)) => {
-                sp_runtime::print("DID new match");
-                println!("DID new match");
-                runtime_print!("DID new match {:?}", call);
-                // call
-            },
-            _ => (),
-        };
+        if (!found) {
+            match call.is_sub_type() {
+                Some(did::Call::new(d, k)) => {
+                    found = true;
+                    sp_runtime::print("DID new match");
+                    println!("DID new match");
+                    runtime_print!("DID new match {:?}", call);
+                    // call
+                },
+                _ => (),
+            };
+        }
 
-        match call.is_sub_type() {
-            Some(anchor::Call::deploy(b)) => {
-                sp_runtime::print("Anchor deploy match");
-                println!("Anchor deploy match. Data length is {}", b.len());
-                runtime_print!("Anchor deploy match {:?}", call);
-                // call
-            },
-            _ => (),
-        };
+        if (!found) {
+            match call.is_sub_type() {
+                Some(anchor::Call::deploy(b)) => {
+                    found = true;
+                    sp_runtime::print("Anchor deploy match");
+                    println!("Anchor deploy match. Data length is {}", b.len());
+                    runtime_print!("Anchor deploy match {:?}", call);
+                    // call
+                },
+                _ => (),
+            };
+        }
+
 
         /*let c2 = match *call1 {
             Call::anchor::Call::deploy(d) => {
