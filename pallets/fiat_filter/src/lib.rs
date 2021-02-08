@@ -13,7 +13,7 @@
 use core_mods::did;
 use frame_support::{
     decl_error, decl_event, decl_module, decl_storage,
-    dispatch::{DispatchResult, DispatchResultWithPostInfo, Dispatchable},
+    dispatch::{DispatchResult, DispatchResultWithPostInfo, Dispatchable, CallMetadata, GetCallMetadata},
     ensure,
     sp_runtime::{DispatchError, Perbill},
     traits::{
@@ -50,7 +50,7 @@ pub trait Config: system::Config + did::Trait {
     type UpdaterDockFiatRate: UpdaterDockFiatRate;
     /// The dispatchable that master may call as Root. It is possible to use another type here, but
     /// it's expected that your runtime::Call will be used.
-    type Call: Parameter + Dispatchable<Origin = Self::Origin> + GetDispatchInfo;
+    type Call: Parameter + Dispatchable<Origin = Self::Origin> + GetDispatchInfo + GetCallMetadata;
     // + IsSubType<DIDModule<Self>>;
     type Currency: Currency<Self::AccountId>;
 }
@@ -130,6 +130,7 @@ decl_module! {
         pub fn execute_call(origin, call: Box<<T as Config>::Call>) -> DispatchResultWithPostInfo { // TODO restrict Call type through types
             let _sender = ensure_signed(origin)?;
 
+            // LH: This check and update should happen in `on_initialize`
             // TODO update DockUsdRate if more than N blocks
             let current_block = <system::Module<T>>::block_number(); // TODO check safety of saturated_into
             // TODO type of current block, vs type of updated_at, update_freq
@@ -192,7 +193,15 @@ where
         // TODO get type of call
         let dispatch_info = call.get_dispatch_info();
         let weight = dispatch_info.weight;
-        if let Some(local_call) = call.is_sub_type() {
+        // Get the pallet name and function name
+        let metadata = call.get_call_metadata();
+        // TODO: Get arguments
+        // let _ = did::Call::new(..);
+        // if (!matches!(call, <T as Config>::Call(did::Call::new(..)))) {
+        /*if (matches!(call, did::Call::new(..) ) ) {
+            sp_runtime::print("Matched new")
+        }*/
+        /*if let Some(local_call) = call.is_sub_type() {
             match local_call {
                 Call::remove(_, _) => (),
                 // Call::<Self>::new_registry(_, _) => (),
@@ -208,7 +217,7 @@ where
                 // }
                 _ => (),
             }
-        }
+        }*/
 
         // match type: get USD price
         // let fee_usdcent = match call_type {
