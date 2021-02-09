@@ -13,7 +13,7 @@ use frame_support::{
     traits::{
         Currency, ExistenceRequirement, Get, IsSubType, UnfilteredDispatchable, WithdrawReasons,
     },
-    weights::{GetDispatchInfo, Pays},
+    weights::{GetDispatchInfo, Pays, Weight},
     Parameter,
 };
 use frame_system::{self as system, ensure_root, ensure_signed};
@@ -107,23 +107,26 @@ decl_module! {
         // type Error = Error<T>;
         // Events must be initialized if they are used by the pallet.
         fn deposit_event() = default;
-
-        /// Execute a Call. Must be a DID or Blob call
-        #[weight = 10_000 + T::DbWeight::get().writes(1)]
-        pub fn execute_call(origin, call: Box<<T as Config>::Call>) -> DispatchResultWithPostInfo {
-            Self::execute_call_(origin,&call)?;
-
+        /// `on_initialize` gets called on every now block
+        fn on_initialize(n: T::BlockNumber) -> Weight {
             // LH: This check and update should happen in `on_initialize`
             // TODO update DockUsdRate if more than N blocks
             let current_block = <system::Module<T>>::block_number(); // TODO check safety of saturated_into
             // TODO type of current block, vs type of updated_at, update_freq
             if current_block - Self::last_updated_at() > Self::update_freq() {
-                T::UpdaterDockFiatRate::update_dock_fiat_rate()?;
-            }
+                let update_res = T::UpdaterDockFiatRate::update_dock_fiat_rate();
+                if let Err(e) = update_res {
+                    // print e ?
+                }
+            };
+            return 0;
+        }
 
-
-
-            // TODO return Pays::No in PostDispatchInfo
+        /// Execute a Call. Must be a DID or Blob call
+        #[weight = 10_000 + T::DbWeight::get().writes(1)]
+        pub fn execute_call(origin, call: Box<<T as Config>::Call>) -> DispatchResultWithPostInfo {
+            Self::execute_call_(origin, &call)?;
+            // return Pays::No in PostDispatchInfo
             Ok(Pays::No.into())
         }
 
