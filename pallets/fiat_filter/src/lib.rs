@@ -107,16 +107,14 @@ decl_module! {
         // type Error = Error<T>;
         // Events must be initialized if they are used by the pallet.
         fn deposit_event() = default;
-        /// `on_initialize` gets called on every now block
+        /// `on_initialize` gets called on every new block
         fn on_initialize(n: T::BlockNumber) -> Weight {
-            // LH: This check and update should happen in `on_initialize`
             // TODO update DockUsdRate if more than N blocks
             let current_block = <system::Module<T>>::block_number(); // TODO check safety of saturated_into
             // TODO type of current block, vs type of updated_at, update_freq
             if current_block - Self::last_updated_at() > Self::update_freq() {
-                let update_res = T::UpdaterDockFiatRate::update_dock_fiat_rate();
-                if let Err(e) = update_res {
-                    // print e ?
+                if let Err(e) = T::UpdaterDockFiatRate::update_dock_fiat_rate() {
+                    sp_runtime::print(e);
                 }
             };
             return 0;
@@ -130,8 +128,7 @@ decl_module! {
             Ok(Pays::No.into())
         }
 
-        /// An example dispatchable that takes a singles value as a parameter, writes the value to
-        /// storage and emits an event. This function must be dispatched by a signed extrinsic.
+        /// Set the Update Frequency through Root
         #[weight = 10_000 + T::DbWeight::get().writes(1)]
         pub fn root_set_update_freq(origin, new_update_freq: T::BlockNumber) -> DispatchResult {
             // ensure!(sender == system::RawOrigin::Root.into(), "only Root can force-update the update frequency");
@@ -144,60 +141,26 @@ decl_module! {
             Ok(())
         }
 
-        // /// An example dispatchable that may throw a custom error.
-        // #[weight = 10_000 + T::DbWeight::get().reads_writes(1,1)]
-        // pub fn cause_error(origin) -> dispatch::DispatchResult {
-        // 	let _who = ensure_signed(origin)?;
+        /// Set DockFiatRate through Root
+        #[weight = 10_000 + T::DbWeight::get().writes(1)]
+        pub fn root_set_dock_fiat_rate(origin, value: Perbill) -> DispatchResult {
+            ensure_root(origin)?;
+            // Update storage
+            DockFiatRate::put(value);
+            // on storage updated, emit an event
+            Self::deposit_event(RawEvent::DockFiatRateUpdated(value));
 
-        // 	// Read a value from storage.
-        // 	match Something::get() {
-        // 		// Return an error if the value has not been set.
-        // 		None => Err(Error::<T>::NoneValue)?,
-        // 		Some(old) => {
-        // 			// Increment the value read from storage; will error in the event of overflow.
-        // 			let new = old.checked_add(1).ok_or(Error::<T>::StorageOverflow)?;
-        // 			// Update the value in storage with the incremented result.
-        // 			Something::put(new);
-        // 			Ok(())
-        // 		},
-        // 	}
-        // }
+            // example of returning a custom err
+            // Err(Error::<T>::NoneValue)?,
+            Ok(())
+        }
     }
 }
 
 type BalanceOf<T> =
     <<T as Config>::Currency as Currency<<T as system::Config>::AccountId>>::Balance;
 
-// trait AmountFiat {
-//     const per_unit: u64;
-//     fn currency() -> FiatCurrency;
-// }
-// struct FiatCurrency {
-//     pub name: String,
-//     pub code: String,
-// }
 type AmountUsd = Permill;
-// impl AmountFiat for AmountUsd {
-//     const per_unit: u64 = 1_000_000;
-//     fn currency() -> FiatCurrency {
-//         FiatCurrency {
-//             name: "US dollar".to_string(),
-//             code: "USD".to_string(),
-//         }
-//     }
-// }
-
-// trait TryIntoAmountDock {
-//     fn try_into_amount_dock(&self,dock_fiat_rate:Perbill) -> Result<u64,&'static str>;
-// }
-// impl TryIntoAmountDock for AmountUsd {
-//     fn try_into_amount_dock(&self,dock_fiat_rate:Perbill) -> Result<u64,&'static str> {
-//         let fee_dock: T::Balance = fee_usdcent as f64.checked_div(Self::dock_fiat_rate() as f64) // TODO safe math and type conversion
-//         .ok_or("checked_div err: Dock usd rate is zero")?;
-//         let fee_dock:T::Balance =
-//         Ok(0)
-//     }
-// }
 
 // private helper functions
 impl<T: Config> Module<T> {
@@ -264,117 +227,39 @@ impl<T: Config> Module<T> {
 
         Ok(Pays::No.into())
     }
+}
 
-    // /// update the dock_usd_rate
-    // pub fn set_dock_usd_rate(origin, value: u64) -> DispatchResultWithPostInfo {
-    //     let sender= ensure_signed(origin)?;
+mod amount_fiat {
+    // TODO intention is to replace AmountUsd with a trait AmountFiat
+    // AmountFiat is a fraction (e.g. Perbill) and has a unit name (e.g. usd)
 
-    //     ////////////////
-    //     // TODO check that it's the price fedd contract that is updating the value
-
-    //     DockUsdRate::put(value);
-    //     Self::deposit_event(RawEvent::DockUsdRateSet(value));
+    // trait AmountFiat {
+    //     const per_unit: u64;
+    //     fn currency() -> FiatCurrency;
+    // }
+    // struct FiatCurrency {
+    //     pub name: String,
+    //     pub code: String,
+    // }
+    // impl AmountFiat for AmountUsd {
+    //     const per_unit: u64 = 1_000_000;
+    //     fn currency() -> FiatCurrency {
+    //         FiatCurrency {
+    //             name: "US dollar".to_string(),
+    //             code: "USD".to_string(),
+    //         }
+    //     }
     // }
 
-    fn compute_call_fee_dock_OLD(call: &<T as Config>::Call) -> Result<u64, &'static str> {
-        // TODO get type of call
-        // let dispatch_info = call.get_dispatch_info();
-        // let weight = dispatch_info.weight;
-        // // let call: &<T as Config>::Call = <T as Config>::Call::from_ref(call);
-        // // Get the pallet name and function name
-
-        // // TODO: Get arguments
-        // /*if let (a, b) = did::Call::new(d, det) {
-        //     sp_runtime::print("something matched");
-        // }*/
-        // /*if let did::Call::new(d, det) = call {
-        //     sp_runtime::print("something matched");
-        // }*/
-        // runtime_print!("{:?}", &call);
-        // println!("{:?}", &call);
-
-        // // TODO: Unless i find a better way, will need a flag to track if anything matched the call
-        // let mut found = false;
-
-        // if (!found) {
-        //     match call.is_sub_type() {
-        //         Some(did::Call::new(d, k)) => {
-        //             found = true;
-        //             sp_runtime::print("DID new match");
-        //             println!("DID new match");
-        //             runtime_print!("DID new match {:?}", call);
-        //             // call
-        //         },
-        //         _ => (),
-        //     };
-        // }
-
-        // if (!found) {
-        //     match call.is_sub_type() {
-        //         Some(anchor::Call::deploy(b)) => {
-        //             found = true;
-        //             sp_runtime::print("Anchor deploy match");
-        //             println!("Anchor deploy match. Data length is {}", b.len());
-        //             runtime_print!("Anchor deploy match {:?}", call);
-        //             // call
-        //         },
-        //         _ => (),
-        //     };
-        // }
-
-        /*let c2 = match *call1 {
-            Call::anchor::Call::deploy(d) => {
-                runtime_print!("Second match {:?}", d);
-            },
-            Call::did::Call::new(d, k) => {
-                runtime_print!("Second match {:?}", d);
-            },
-            _ => unimplemented!()
-        };*/
-
-        /*if let Some(local_call) = call.is_sub_type() {
-            match local_call {
-                did::Call::<T>::remove(_, _) => (),
-                _ => (),
-            }
-        }*/
-
-        // let _ = did::Call::new(..);
-        // if (!matches!(call, <T as Config>::Call(did::Call::new(..)))) {
-        /*if (matches!(call, did::Call::new(..) ) ) {
-            sp_runtime::print("Matched new")
-        }*/
-
-        // if let Some(local_call) = call.is_sub_type() {
-        //     match local_call {
-        //         Call::remove(_, _) => (),
-        //         // Call::<Self>::new_registry(_, _) => (),
-        //         // <T as Config>::Call::DID => (),
-        //         // Call::DID => (),
-        //         // did::Call::<T>::remove(_, _) => (),
-        //         // Migrator can make only these 2 calls without paying fees
-        //         // Call::migrate(..) | Call::give_bonuses(..) => {
-        //         //     if !<Migrators<T>>::contains_key(who) {
-        //         //         // If migrator not registered, don't include transaction in block
-        //         //         return InvalidTransaction::Custom(1).into();
-        //         //     }
-        //         // }
-        //         _ => (),
-        //     }
-        // }
-
-        // match type: get USD price
-        // let fee_usdcent = match call_type {
-        //     _ => 50,
-        // };
-
-        // convert to DOCKs
-        // TODO check conversion to f64 and division
-        // let fee_dock: T::Balance = fee_usdcent as f64.checked_div(Self::dock_fiat_rate() as f64) // TODO safe math and type conversion
-        // // TODO what is minimum unit for DOCKs
-        // .ok_or("checked_div err: Dock usd rate is zero")?;
-
-        let fee_dock = 0;
-        Ok(fee_dock)
-    }
+    // trait TryIntoAmountDock {
+    //     fn try_into_amount_dock(&self,dock_fiat_rate:Perbill) -> Result<u64,&'static str>;
+    // }
+    // impl TryIntoAmountDock for AmountUsd {
+    //     fn try_into_amount_dock(&self,dock_fiat_rate:Perbill) -> Result<u64,&'static str> {
+    //         let fee_dock: T::Balance = fee_usdcent as f64.checked_div(Self::dock_fiat_rate() as f64) // TODO safe math and type conversion
+    //         .ok_or("checked_div err: Dock usd rate is zero")?;
+    //         let fee_dock:T::Balance =
+    //         Ok(0)
+    //     }
+    // }
 }
