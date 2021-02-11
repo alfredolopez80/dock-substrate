@@ -113,7 +113,7 @@ pub fn ext() -> sp_io::TestExternalities {
         .unwrap()
         .into();
     ret.execute_with(|| {
-        let _ = <Test as Config>::Currency::deposit_creating(&ALICE, 100_000_000);
+        let _ = <Test as Config>::Currency::deposit_creating(&ALICE, 100_000_000_000);
     });
     ret
 }
@@ -127,7 +127,7 @@ pub fn gen_kp() -> sr25519::Pair {
 // concern), but that doesn't matter for our purposes.
 pub fn create_did(origin: u64, did: did::Did) -> sr25519::Pair {
     let kp = gen_kp();
-    println!("did pk: {:?}", kp.public().0);
+    // println!("did pk: {:?}", kp.public().0);
     did::Module::<Test>::new(
         Origin::signed(origin),
         did,
@@ -160,6 +160,16 @@ pub fn random_bytes(len: usize) -> Vec<u8> {
     ret
 }
 
+fn measure_fees(call: TestCall) -> (u64, DispatchResultWithPostInfo) {
+    let balance_pre = <Test as Config>::Currency::free_balance(ALICE);
+    // let call = TestCall::AnchorMod(anchor::Call::<Test>::deploy(dat));
+    let executed = FiatFilterModule::execute_call(Origin::signed(ALICE), Box::new(call.clone()));
+    let balance_post = <Test as Config>::Currency::free_balance(ALICE);
+    let fees_paid_dock_permill = balance_pre - balance_post;
+    // dbg!(fees_paid_dock_permill);
+    return (fees_paid_dock_permill, executed);
+}
+
 // TESTS
 
 use core_mods::StateChange;
@@ -183,9 +193,12 @@ mod tests_did_calls {
             );
 
             let call = TestCall::DidMod(did::Call::<Test>::new(d.clone(), key_detail));
-            FiatFilterModule::execute_call(Origin::signed(ALICE), Box::new(call.clone())).unwrap();
+            let (fee_microdock, executed) = measure_fees(call);
 
-            // TODO assert fee 50
+            let pdi = executed.unwrap();
+            assert!(pdi.pays_fee == Pays::No);
+            const _50_CENTS: u64 = 22211244;
+            assert_eq!(fee_microdock, _50_CENTS);
         });
     }
     #[test]
@@ -195,8 +208,8 @@ mod tests_did_calls {
 
             let (pair_1, _, _) = sr25519::Pair::generate_with_phrase(None);
             let pk_1 = pair_1.public().0;
-            println!("update did:{:?}", did_alice.to_vec());
-            println!("update pk_1:{:?}", pk_1.to_vec());
+            // println!("update did:{:?}", did_alice.to_vec());
+            // println!("update pk_1:{:?}", pk_1.to_vec());
             let detail = KeyDetail::new(
                 did_alice.clone(),
                 PublicKey::Sr25519(Bytes32 { value: pk_1 }),
@@ -209,14 +222,14 @@ mod tests_did_calls {
                 detail.clone()
             ));
 
-            let (current_detail, modified_in_block) = DidMod::get_key_detail(&did_alice).unwrap();
+            let (_current_detail, modified_in_block) = DidMod::get_key_detail(&did_alice).unwrap();
             // assert_eq!(current_detail.controller, did);
 
             // Correctly update DID's key.
             // Prepare a key update
             let (pair_2, _, _) = sr25519::Pair::generate_with_phrase(None);
             let pk_2 = pair_2.public().0;
-            println!("update pk_2:{:?}", pk_2.to_vec());
+            // println!("update pk_2:{:?}", pk_2.to_vec());
             let key_update = KeyUpdate::new(
                 did_alice.clone(),
                 PublicKey::Sr25519(Bytes32 { value: pk_2 }),
@@ -236,15 +249,18 @@ mod tests_did_calls {
             //     key_update,
             //     sig
             // ));
-            let call = TestCall::DidMod(did::Call::<Test>::update_key(key_update, sig));
-            FiatFilterModule::execute_call(Origin::signed(ALICE), Box::new(call.clone())).unwrap();
 
             // let (current_detail, modified_in_block) = DidMod::get_key_detail(&did).unwrap();
             // // Since key update passed None for the controller, it should not change
             // assert_eq!(current_detail.controller, did);
 
-            // TODO assert Pays::No
-            // TODO assert fee 51
+            let call = TestCall::DidMod(did::Call::<Test>::update_key(key_update, sig));
+            let (fee_microdock, executed) = measure_fees(call);
+
+            let pdi = executed.unwrap();
+            assert!(pdi.pays_fee == Pays::No);
+            const _51_CENTS: u64 = 22655469;
+            assert_eq!(fee_microdock, _51_CENTS);
         });
     }
     #[test]
@@ -252,7 +268,7 @@ mod tests_did_calls {
         ext().execute_with(|| {
             let did = [1; DID_BYTE_SIZE];
             let (pair_1, _, _) = sr25519::Pair::generate_with_phrase(None);
-            let pk_1 = pair_1.public().0;
+            let _pk_1 = pair_1.public().0;
 
             let to_remove = DidRemoval::new(did.clone(), 2u32);
             let sig = DidSignature::Sr25519(Bytes64 {
@@ -261,10 +277,13 @@ mod tests_did_calls {
                     .0,
             });
 
-            let call = TestCall::DidMod(did::Call::<Test>::remove(to_remove, sig));
-            FiatFilterModule::execute_call(Origin::signed(ALICE), Box::new(call.clone())).unwrap();
+            let (fee_microdock, executed) =
+                measure_fees(TestCall::DidMod(did::Call::<Test>::remove(to_remove, sig)));
 
-            // TODO assert fee 52
+            let pdi = executed.unwrap();
+            assert!(pdi.pays_fee == Pays::No);
+            const _52_CENTS: u64 = 23099694;
+            assert_eq!(fee_microdock, _52_CENTS);
         });
     }
 }
@@ -275,10 +294,14 @@ fn call_anchor_deploy() {
 
     ext().execute_with(|| {
         let dat = (0..32).map(|_| rand::random()).collect();
-        let call = TestCall::AnchorMod(anchor::Call::<Test>::deploy(dat));
-        FiatFilterModule::execute_call(Origin::signed(ALICE), Box::new(call.clone())).unwrap();
 
-        // TODO assert fee 60
+        let (fee_microdock, executed) =
+            measure_fees(TestCall::AnchorMod(anchor::Call::<Test>::deploy(dat)));
+
+        let pdi = executed.unwrap();
+        assert!(pdi.pays_fee == Pays::No);
+        const _60_CENTS: u64 = 26653493;
+        assert_eq!(fee_microdock, _60_CENTS);
     });
 }
 
@@ -297,9 +320,12 @@ fn call_blob_new() {
         let sig = sign(&StateChange::Blob(blob.clone()), &author_kp);
 
         let call = TestCall::BlobMod(blob::Call::<Test>::new(blob, sig));
-        FiatFilterModule::execute_call(Origin::signed(ALICE), Box::new(call.clone())).unwrap();
+        let (fee_microdock, executed) = measure_fees(call);
 
-        // TODO assert fee 70
+        let pdi = executed.unwrap();
+        assert!(pdi.pays_fee == Pays::No);
+        const _70_CENTS: u64 = 31095742;
+        assert_eq!(fee_microdock, _70_CENTS);
     });
 }
 
@@ -308,7 +334,6 @@ mod tests_revoke_calls {
     use did::Did;
     use revoke::{Policy, Registry, RegistryId, RemoveRegistry, Revoke, RevokeId, UnRevoke};
 
-    pub const REG_ID: RegistryId = [3u8; 32];
     pub const REV_ID: RevokeId = [7u8; 32];
     // pub const DID_ALICE: Did = [4u8; 32];
     // pub const DID_BOB: Did = [5u8; 32];
@@ -319,25 +344,21 @@ mod tests_revoke_calls {
     pub fn block_no() -> u64 {
         system::Module::<Test>::block_number()
     }
-    pub fn new_reg(did: Did) -> Registry {
+    pub fn new_reg(did: Did) -> (RegistryId, Registry) {
+        pub const REG_ID: RegistryId = [3u8; 32];
         let reg = Registry {
             policy: policy_oneof(&[did]),
             add_only: true,
         };
         RevokeMod::new_registry(Origin::signed(ALICE), REG_ID, reg.clone()).unwrap();
-        reg
+        (REG_ID, reg)
     }
 
     #[test]
     fn call_revoke_revoke() {
         ext().execute_with(|| {
             let (did_alice, kp_alice) = newdid(ALICE);
-            let reg = new_reg(did_alice);
-            // let reg = Registry {
-            //     policy: policy_oneof(&[did_alice]),
-            //     add_only: true,
-            // };
-            // RevokeMod::new_registry(Origin::signed(ALICE), REG_ID, reg).unwrap();
+            let (reg_id, _reg) = new_reg(did_alice);
 
             let cases: &[&[RevokeId]] = &[
                 &[],
@@ -349,7 +370,7 @@ mod tests_revoke_calls {
             ];
             for ids in cases {
                 let revoke = Revoke {
-                    registry_id: REG_ID,
+                    registry_id: reg_id,
                     revoke_ids: ids.iter().cloned().collect(),
                     last_modified: block_no() as u32,
                 };
@@ -360,14 +381,17 @@ mod tests_revoke_calls {
                 .collect();
 
                 let call = TestCall::RevokeMod(revoke::Call::<Test>::revoke(revoke, proof));
-                FiatFilterModule::execute_call(Origin::signed(ALICE), Box::new(call.clone()))
-                    .unwrap();
 
                 // assert!(ids
                 //     .iter()
                 //     .all(|id| Revocations::contains_key(registry_id, id)));
 
-                // TODO assert fee 81
+                let (fee_microdock, executed) = measure_fees(call);
+
+                let pdi = executed.unwrap();
+                assert!(pdi.pays_fee == Pays::No);
+                const _81_CENTS: u64 = 35982216;
+                assert_eq!(fee_microdock, _81_CENTS);
             }
         });
     }
@@ -375,13 +399,13 @@ mod tests_revoke_calls {
     fn call_revoke_unrevoke() {
         ext().execute_with(|| {
             let (did_alice, kp_alice) = newdid(ALICE);
-            let reg = new_reg(did_alice);
+            let (reg_id, _reg) = new_reg(did_alice);
             let last_modified = block_no() as u32;
             // let revoke_ids: BTreeSet<RevokeId> = &[REV_ID].iter().cloned().collect();
 
             // 1. revoke
             let revoke = Revoke {
-                registry_id: REG_ID,
+                registry_id: reg_id,
                 revoke_ids: vec![REV_ID].iter().cloned().collect(),
                 last_modified,
             };
@@ -395,7 +419,7 @@ mod tests_revoke_calls {
 
             // 2. unrevoke
             let unrevoke = UnRevoke {
-                registry_id: REG_ID,
+                registry_id: reg_id,
                 revoke_ids: revoke.revoke_ids.clone(),
                 last_modified,
             };
@@ -404,15 +428,17 @@ mod tests_revoke_calls {
                 sign(&StateChange::UnRevoke(unrevoke.clone()), &kp_alice),
             ))
             .collect();
-            // RevoMod::unrevoke(Origin::signed(ALICE), unrevoke, proof).unwrap();
+
             let call = TestCall::RevokeMod(revoke::Call::<Test>::unrevoke(unrevoke, proof));
-            FiatFilterModule::execute_call(Origin::signed(ALICE), Box::new(call.clone())).unwrap();
+            let (fee_microdock, executed) = measure_fees(call);
+            assert_ok!(executed);
+
             // TODO assert unrevoked
 
-            // let call = TestCall::BlobMod(blob::Call::<Test>::new(blob));
-            // FiatFilterModule::execute_call(Origin::signed(ALICE), Box::new(call.clone())).unwrap();
-
-            // TODO assert fee 82
+            let pdi = executed.unwrap();
+            assert!(pdi.pays_fee == Pays::No);
+            const _82_CENTS: u64 = 36426441;
+            assert_eq!(fee_microdock, _82_CENTS);
         });
     }
     #[test]
@@ -432,16 +458,20 @@ mod tests_revoke_calls {
 
                 // assert!(!Registries::<Test>::contains_key(reg_id));
                 // RevokeMod::new_registry(Origin::signed(ALICE), reg_id, reg.clone()).unwrap();
-                let call = TestCall::RevokeMod(revoke::Call::<Test>::new_registry(reg_id, reg));
-                FiatFilterModule::execute_call(Origin::signed(ALICE), Box::new(call.clone()))
-                    .unwrap();
-                // assert!(Registries::<Test>::contains_key(reg_id));
 
+                let call = TestCall::RevokeMod(revoke::Call::<Test>::new_registry(reg_id, reg));
+                let (fee_microdock, executed) = measure_fees(call);
+                assert_ok!(executed);
+
+                // assert!(Registries::<Test>::contains_key(reg_id));
                 // let (created_reg, created_bloc) = Registries::<Test>::get(reg_id).unwrap();
                 // assert_eq!(created_reg, reg);
                 // assert_eq!(created_bloc, block_no());
 
-                // TODO assert fee 80
+                let pdi = executed.unwrap();
+                assert!(pdi.pays_fee == Pays::No);
+                const _80_CENTS: u64 = 35537991;
+                assert_eq!(fee_microdock, _80_CENTS);
             }
         });
     }
@@ -449,18 +479,12 @@ mod tests_revoke_calls {
     fn call_revoke_remove_registry() {
         ext().execute_with(|| {
             let (did_alice, kp_alice) = newdid(ALICE);
-            let policy = policy_oneof(&[did_alice]);
-            // let registry_id = REG_ID;
-            let add_only = false;
+            let (reg_id, _reg) = new_reg(did_alice);
             let last_modified = block_no() as u32;
-
-            let reg = Registry { policy, add_only };
-            RevokeMod::new_registry(Origin::signed(ALICE), REG_ID, reg).unwrap();
-            // assert!(Registries::<Test>::contains_key(registry_id));
 
             // destroy reg
             let rem = RemoveRegistry {
-                registry_id: REG_ID,
+                registry_id: reg_id,
                 last_modified,
             };
             let proof = std::iter::once((
@@ -468,15 +492,18 @@ mod tests_revoke_calls {
                 sign(&StateChange::RemoveRegistry(rem.clone()), &kp_alice),
             ))
             .collect();
-            // RevokeMod::remove_registry(Origin::signed(ALICE), rem, proof).unwrap();
 
             let call = TestCall::RevokeMod(revoke::Call::<Test>::remove_registry(rem, proof));
-            FiatFilterModule::execute_call(Origin::signed(ALICE), Box::new(call.clone())).unwrap();
+            let (fee_microdock, executed) = measure_fees(call);
+            assert_ok!(executed);
 
             // assert not exists
             // assert!(!Registries::<Test>::contains_key(registry_id));
 
-            // TODO assert fee 83
+            let pdi = executed.unwrap();
+            assert!(pdi.pays_fee == Pays::No);
+            const _83_CENTS: u64 = 36870666;
+            assert_eq!(fee_microdock, _83_CENTS);
         });
     }
 }
@@ -488,10 +515,8 @@ mod tests_root_calls {
     fn root_set_update_freq__OK() {
         ext().execute_with(|| {
             // Dispatch a signed extrinsic.
-            assert_ok!(FiatFilterModule::root_set_update_freq(
-                RawOrigin::Root.into(),
-                42u64
-            ));
+            let executed = FiatFilterModule::root_set_update_freq(RawOrigin::Root.into(), 42u64);
+            assert_ok!(executed);
             // Read pallet storage and assert an expected result.
             assert_eq!(FiatFilterModule::update_freq(), 42u64);
         });
@@ -513,10 +538,12 @@ mod tests_root_calls {
     fn root_set_DockFiatRate__OK() {
         ext().execute_with(|| {
             // Dispatch a signed extrinsic.
-            assert_ok!(FiatFilterModule::root_set_dock_fiat_rate(
+            let executed = FiatFilterModule::root_set_dock_fiat_rate(
                 RawOrigin::Root.into(),
                 Perbill::from_parts(500_000),
-            ));
+            );
+            assert_ok!(executed);
+
             // Read pallet storage and assert an expected result.
             assert_eq!(
                 FiatFilterModule::dock_fiat_rate(),

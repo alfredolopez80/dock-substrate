@@ -7,6 +7,7 @@ use frame_support::{
     decl_error, decl_event, decl_module, decl_storage,
     dispatch::{
         CallMetadata, DispatchResult, DispatchResultWithPostInfo, Dispatchable, GetCallMetadata,
+        PostDispatchInfo,
     },
     ensure,
     sp_runtime::{DispatchError, Perbill, Permill},
@@ -54,7 +55,8 @@ pub trait Config:
         + IsSubType<did::Call<Self>>
         + IsSubType<anchor::Call<Self>>
         + IsSubType<blob::Call<Self>>
-        + IsSubType<revoke::Call<Self>>;
+        + IsSubType<revoke::Call<Self>>
+        + GetCallMetadata;
     /// The module's Currency type definition
     type Currency: Currency<Self::AccountId>;
 }
@@ -121,7 +123,7 @@ decl_module! {
         }
 
         /// Execute a Call. Must be a DID or Blob call
-        #[weight = 10_000 + T::DbWeight::get().writes(1)]
+        #[weight = (10_000 + T::DbWeight::get().writes(1), Pays::No)]
         pub fn execute_call(origin, call: Box<<T as Config>::Call>) -> DispatchResultWithPostInfo {
             Self::execute_call_(origin, &call)?;
             // return Pays::No in PostDispatchInfo
@@ -166,52 +168,63 @@ type AmountUsd = Permill;
 impl<T: Config> Module<T> {
     fn get_call_fee_fiat_(call: &<T as Config>::Call) -> AmountUsd {
         match call.is_sub_type() {
-            Some(did::Call::new(did, detail)) => return Permill::from_percent(50),
-            Some(did::Call::update_key(key_update, sig)) => return Permill::from_percent(51),
-            Some(did::Call::remove(to_remove, sig)) => return Permill::from_percent(52),
+            Some(did::Call::new(_did, _detail)) => return Permill::from_percent(50),
+            Some(did::Call::update_key(_key_update, _sig)) => return Permill::from_percent(51),
+            Some(did::Call::remove(_to_remove, _sig)) => return Permill::from_percent(52),
             _ => {}
         };
         match call.is_sub_type() {
-            Some(anchor::Call::deploy(bytes)) => return Permill::from_percent(60),
+            Some(anchor::Call::deploy(_bytes)) => return Permill::from_percent(60),
             _ => {}
         };
         match call.is_sub_type() {
-            Some(blob::Call::new(blob, sig)) => return Permill::from_percent(70),
+            Some(blob::Call::new(_blob, _sig)) => return Permill::from_percent(70),
             _ => {}
         };
         match call.is_sub_type() {
-            Some(revoke::Call::new_registry(id, registry)) => return Permill::from_percent(80),
-            Some(revoke::Call::revoke(revoke, proof)) => return Permill::from_percent(81),
-            Some(revoke::Call::unrevoke(unrevoke, proof)) => return Permill::from_percent(82),
-            Some(revoke::Call::remove_registry(rm, proof)) => return Permill::from_percent(83),
+            Some(revoke::Call::new_registry(_id, _registry)) => return Permill::from_percent(80),
+            Some(revoke::Call::revoke(_revoke, _proof)) => return Permill::from_percent(81),
+            Some(revoke::Call::unrevoke(_unrevoke, _proof)) => return Permill::from_percent(82),
+            Some(revoke::Call::remove_registry(_rm, _proof)) => return Permill::from_percent(83),
             _ => {}
         };
         return Permill::from_percent(500);
     }
     fn compute_call_fee_dock_(call: &<T as Config>::Call) -> Result<BalanceOf<T>, &'static str> {
+        use std::convert::TryInto;
         let fee_fiat_permill: AmountUsd = Self::get_call_fee_fiat_(call);
-        let fee_fiat_perbill = Perbill::from_parts(fee_fiat_permill.deconstruct() * 1000);
+        let fee_fiat_perbill: u32 = fee_fiat_permill.deconstruct() * 1000;
 
-        let fee_dock_perbill: Perbill = fee_fiat_perbill / Self::dock_fiat_rate();
-        let fee_dock_permill: u32 = fee_dock_perbill
-            .deconstruct()
-            .checked_div(1000)
-            .ok_or("checked_div err: DockFiatRate is zero")?;
+        let dock_fiat_rate_perbill: u32 = Self::dock_fiat_rate().deconstruct();
+        let fee_dock_permill_u64: u64 = (fee_fiat_perbill as u64 * 1_000_000_u64)
+            .checked_div(dock_fiat_rate_perbill as u64)
+            .ok_or("checked_div err: divide by dock_fiat_rate_perbill=0")?;
+        let fee_dock_permill_u32: u32 = fee_dock_permill_u64
+            .try_into()
+            .or(Err("fee_dock_permill: u32 overflow"))?;
 
         // The token has 6 decimal places (defined in the runtime)
         // pub const DOCK: Balance = 1_000_000;
-        // T::Balance is already expressed in DOCK_Permill
-        let fee_dock = <BalanceOf<T>>::from(fee_dock_permill);
-        Ok(fee_dock)
+        // T::Balance is already expressed in DOCK_Permill or microdock
+        let fee_microdock = <BalanceOf<T>>::from(fee_dock_permill_u32);
+        Ok(fee_microdock)
     }
 
     fn charge_fees_(who: T::AccountId, amount: BalanceOf<T>) -> Result<(), &'static str> {
+        // let balance_pre = <T as Config>::Currency::free_balance(&who); // TODO rm
         let _ = <T::Currency>::withdraw(
             &who,
             amount,
             WithdrawReasons::FEE,
             ExistenceRequirement::KeepAlive,
         )?;
+        // let balance_post = <T as Config>::Currency::free_balance(&who); // TODO rm
+        // dbg!(
+        //     amount,
+        //     balance_pre,
+        //     balance_post,
+        //     balance_pre - balance_post
+        // );
         Ok(())
     }
 
@@ -224,6 +237,14 @@ impl<T: Config> Module<T> {
         Self::charge_fees_(sender, fee_dock)?;
 
         let dispatch_result = call.clone().dispatch(origin);
+        match dispatch_result {
+            Ok(o) => {
+                sp_runtime::print(o);
+            }
+            Err(e) => {
+                sp_runtime::print(e);
+            }
+        };
 
         Ok(Pays::No.into())
     }
