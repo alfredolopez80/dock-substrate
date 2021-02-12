@@ -18,6 +18,7 @@ use frame_support::{
     Parameter,
 };
 use frame_system::{self as system, ensure_root, ensure_signed};
+use sp_std::boxed::Box;
 use sp_std::fmt::Debug;
 
 #[cfg(test)]
@@ -27,7 +28,7 @@ mod tests;
 /// Config option for updating the DockFiatRate
 pub trait UpdaterDockFiatRate {
     /// Handler for updating the DockFiatRate
-    fn update_dock_fiat_rate() -> DispatchResultWithPostInfo;
+    fn update_dock_fiat_rate() -> Result<(), &'static str>;
 }
 
 // /// The pallet's configuration trait
@@ -55,8 +56,8 @@ pub trait Config:
         + IsSubType<did::Call<Self>>
         + IsSubType<anchor::Call<Self>>
         + IsSubType<blob::Call<Self>>
-        + IsSubType<revoke::Call<Self>>
-        + GetCallMetadata;
+        + IsSubType<revoke::Call<Self>>;
+    // + GetCallMetadata;
     /// The module's Currency type definition
     type Currency: Currency<Self::AccountId>;
 }
@@ -68,7 +69,7 @@ decl_storage! {
     // ----------------------------------vvvvvvvvvvvvvv
     trait Store for Module<T: Config> as FiatFilterModule {
         /// price of one DOCK in fiat (for now, only USD)
-        pub DockFiatRate get(fn dock_fiat_rate) config(): Perbill = Perbill::from_fraction(0.02251112);
+        pub DockFiatRate get(fn dock_fiat_rate) config(): Perbill = Perbill::from_parts(22511120);
         /// price update frequency (in number of blocks)
         pub UpdateFreq get(fn update_freq) config(): <T as system::Config>::BlockNumber = 10u32.into();
         // /// block number of last DockUsdRate update
@@ -79,7 +80,6 @@ decl_storage! {
 // Pallets use events to inform users when important changes are made.
 decl_event! {
     pub enum Event<T> where
-        // AccountId = <T as frame_system::Config>::AccountId, // TODO remove bound
         <T as frame_system::Config>::BlockNumber,
     {
         /// on set_dock_usd_rate executed
@@ -111,9 +111,8 @@ decl_module! {
         fn deposit_event() = default;
         /// `on_initialize` gets called on every new block
         fn on_initialize(n: T::BlockNumber) -> Weight {
-            // TODO update DockUsdRate if more than N blocks
-            let current_block = <system::Module<T>>::block_number(); // TODO check safety of saturated_into
-            // TODO type of current block, vs type of updated_at, update_freq
+            // update DockUsdRate if more than N blocks
+            let current_block = <system::Module<T>>::block_number();
             if current_block - Self::last_updated_at() > Self::update_freq() {
                 if let Err(e) = T::UpdaterDockFiatRate::update_dock_fiat_rate() {
                     sp_runtime::print(e);
@@ -191,7 +190,7 @@ impl<T: Config> Module<T> {
         return Permill::from_percent(500);
     }
     fn compute_call_fee_dock_(call: &<T as Config>::Call) -> Result<BalanceOf<T>, &'static str> {
-        use std::convert::TryInto;
+        use sp_std::convert::TryInto;
         let fee_fiat_permill: AmountUsd = Self::get_call_fee_fiat_(call);
         let fee_fiat_perbill: u32 = fee_fiat_permill.deconstruct() * 1000;
 

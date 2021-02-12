@@ -1210,6 +1210,7 @@ name = "dock-runtime"
 version = "0.12.3"
 dependencies = [
  "core_mods",
+ "fiat_filter",
  "forked-pallet-democracy",
  "fp-rpc",
  "frame-benchmarking",

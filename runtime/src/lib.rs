@@ -602,12 +602,29 @@ impl pallet_evm::Config for Runtime {
     type ChainId = DockChainId;
 }
 
-pub struct BaseFilter;
+pub struct NoopUpdaterDockFiatRate {}
+impl fiat_filter::UpdaterDockFiatRate for NoopUpdaterDockFiatRate {
+    fn update_dock_fiat_rate() -> Result<(), &'static str> {
+        Ok(())
+    }
+}
+impl fiat_filter::Config for Runtime {
+    type Event = Event;
+    type Call = Call;
+    type UpdaterDockFiatRate = NoopUpdaterDockFiatRate; // TODO
+    type Currency = balances::Module<Runtime>;
+}
 
+pub struct BaseFilter;
 impl Filter<Call> for BaseFilter {
     fn filter(call: &Call) -> bool {
         match call {
             Call::Democracy(_) => false,
+            // filter out core_mods calls so they're only done through fiat_filter
+            Call::Anchor(_) => false,
+            Call::BlobStore(_) => false,
+            Call::DIDModule(_) => false,
+            Call::Revoke(_) => false,
             _ => true,
         }
     }
@@ -648,6 +665,7 @@ construct_runtime!(
         Scheduler: pallet_scheduler::{Module, Call, Storage, Event<T>},
         Ethereum: pallet_ethereum::{Module, Call, Storage, Event, Config, ValidateUnsigned},
         EVM: pallet_evm::{Module, Config, Call, Storage, Event<T>},
+        FiatFilter: fiat_filter::{Module, Call, Storage, Event<T>},
     }
 );
 

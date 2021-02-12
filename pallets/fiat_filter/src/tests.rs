@@ -97,8 +97,8 @@ impl crate::blob::Trait for Test {
 
 pub struct TestUpdaterDockFiatRate {}
 impl UpdaterDockFiatRate for TestUpdaterDockFiatRate {
-    fn update_dock_fiat_rate() -> DispatchResultWithPostInfo {
-        Ok(Pays::No.into())
+    fn update_dock_fiat_rate() -> Result<(), &'static str> {
+        Ok(())
     }
 }
 
