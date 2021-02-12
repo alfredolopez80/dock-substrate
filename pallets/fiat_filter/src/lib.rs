@@ -6,8 +6,8 @@ use core_mods::{anchor, blob, did, revoke};
 use frame_support::{
     decl_error, decl_event, decl_module, decl_storage,
     dispatch::{
-        CallMetadata, DispatchResult, DispatchResultWithPostInfo, Dispatchable, GetCallMetadata,
-        PostDispatchInfo,
+        CallMetadata, DispatchErrorWithPostInfo, DispatchResult, DispatchResultWithPostInfo,
+        Dispatchable, GetCallMetadata, PostDispatchInfo,
     },
     ensure,
     sp_runtime::{DispatchError, Perbill, Permill},
@@ -229,6 +229,7 @@ impl<T: Config> Module<T> {
 
     fn execute_call_(origin: T::Origin, call: &<T as Config>::Call) -> DispatchResultWithPostInfo {
         let sender = ensure_signed(origin.clone())?;
+        let weight = call.get_dispatch_info().weight;
 
         // calculate fee based on type of call
         let fee_dock = Self::compute_call_fee_dock_(&call)?;
@@ -236,16 +237,27 @@ impl<T: Config> Module<T> {
         Self::charge_fees_(sender, fee_dock)?;
 
         let dispatch_result = call.clone().dispatch(origin);
-        match dispatch_result {
-            Ok(o) => {
-                sp_runtime::print(o);
+        return match dispatch_result {
+            Ok(post_dispatch_info) => {
+                sp_runtime::print(post_dispatch_info);
+                Ok(PostDispatchInfo {
+                    actual_weight: Some(weight),
+                    pays_fee: Pays::No,
+                })
             }
             Err(e) => {
                 sp_runtime::print(e);
+                Err(DispatchErrorWithPostInfo {
+                    post_info: PostDispatchInfo {
+                        actual_weight: Some(weight),
+                        pays_fee: Pays::No,
+                    },
+                    error: e.error,
+                })
             }
         };
 
-        Ok(Pays::No.into())
+        // Ok(Pays::No.into())
     }
 }
 

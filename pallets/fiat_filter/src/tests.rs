@@ -122,23 +122,21 @@ pub fn ext() -> sp_io::TestExternalities {
 pub fn gen_kp() -> sr25519::Pair {
     sr25519::Pair::generate_with_phrase(None).0
 }
+/// get the latest block number
+pub fn block_no() -> u64 {
+    system::Module::<Test>::block_number()
+}
 // Create did for `did`. Return the randomly generated signing key.
 // The did public key is controlled by some non-existent account (normally a security
 // concern), but that doesn't matter for our purposes.
 pub fn create_did(origin: u64, did: did::Did) -> sr25519::Pair {
     let kp = gen_kp();
-    // println!("did pk: {:?}", kp.public().0);
-    did::Module::<Test>::new(
-        Origin::signed(origin),
-        did,
-        did::KeyDetail::new(
-            [100; 32],
-            did::PublicKey::Sr25519(did::Bytes32 {
-                value: kp.public().0,
-            }),
-        ),
-    )
-    .unwrap();
+    let pubkey_bytes = did::Bytes32 {
+        value: kp.public().0,
+    };
+    let didpubkey = did::PublicKey::Sr25519(pubkey_bytes);
+    let key_detail = did::KeyDetail::new(did, didpubkey);
+    did::Module::<Test>::new(Origin::signed(origin), did, key_detail).unwrap();
     kp
 }
 /// create a did with a random id and random signing key
@@ -162,13 +160,14 @@ pub fn random_bytes(len: usize) -> Vec<u8> {
 
 fn measure_fees(call: TestCall) -> (u64, DispatchResultWithPostInfo) {
     let balance_pre = <Test as Config>::Currency::free_balance(ALICE);
-    // let call = TestCall::AnchorMod(anchor::Call::<Test>::deploy(dat));
     let executed = FiatFilterModule::execute_call(Origin::signed(ALICE), Box::new(call.clone()));
     let balance_post = <Test as Config>::Currency::free_balance(ALICE);
     let fees_paid_dock_permill = balance_pre - balance_post;
-    // dbg!(fees_paid_dock_permill);
     return (fees_paid_dock_permill, executed);
 }
+// fn exec(call: TestCall) -> DispatchResultWithPostInfo {
+//     return FiatFilterModule::execute_call(Origin::signed(ALICE), Box::new(call.clone()));
+// }
 
 // TESTS
 
@@ -194,6 +193,7 @@ mod tests_did_calls {
 
             let call = TestCall::DidMod(did::Call::<Test>::new(d.clone(), key_detail));
             let (fee_microdock, executed) = measure_fees(call);
+            assert_ok!(executed);
 
             let pdi = executed.unwrap();
             assert!(pdi.pays_fee == Pays::No);
@@ -205,31 +205,23 @@ mod tests_did_calls {
     fn call_did_update_key__OK() {
         ext().execute_with(|| {
             let did_alice = [1; DID_BYTE_SIZE];
-
             let (pair_1, _, _) = sr25519::Pair::generate_with_phrase(None);
             let pk_1 = pair_1.public().0;
-            // println!("update did:{:?}", did_alice.to_vec());
-            // println!("update pk_1:{:?}", pk_1.to_vec());
             let detail = KeyDetail::new(
                 did_alice.clone(),
                 PublicKey::Sr25519(Bytes32 { value: pk_1 }),
             );
 
             // Add a DID
-            assert_ok!(DidMod::new(
-                Origin::signed(ALICE),
-                did_alice.clone(),
-                detail.clone()
-            ));
+            let new_res = DidMod::new(Origin::signed(ALICE), did_alice.clone(), detail.clone());
+            assert_ok!(new_res);
 
             let (_current_detail, modified_in_block) = DidMod::get_key_detail(&did_alice).unwrap();
-            // assert_eq!(current_detail.controller, did);
 
             // Correctly update DID's key.
             // Prepare a key update
             let (pair_2, _, _) = sr25519::Pair::generate_with_phrase(None);
             let pk_2 = pair_2.public().0;
-            // println!("update pk_2:{:?}", pk_2.to_vec());
             let key_update = KeyUpdate::new(
                 did_alice.clone(),
                 PublicKey::Sr25519(Bytes32 { value: pk_2 }),
@@ -239,23 +231,12 @@ mod tests_did_calls {
             let sig_value = pair_1
                 .sign(&StateChange::KeyUpdate(key_update.clone()).encode())
                 .0;
-            // // println!("update modified_in_block:{:?}", modified_in_block);
-            // println!("update sig_value:{:?}", sig_value.to_vec());
             let sig = DidSignature::Sr25519(did::Bytes64 { value: sig_value });
 
             // Signing with the current key (`pair_1`) to update to the new key (`pair_2`)
-            // assert_ok!(DidMod::update_key(
-            //     Origin::signed(alice),
-            //     key_update,
-            //     sig
-            // ));
-
-            // let (current_detail, modified_in_block) = DidMod::get_key_detail(&did).unwrap();
-            // // Since key update passed None for the controller, it should not change
-            // assert_eq!(current_detail.controller, did);
-
             let call = TestCall::DidMod(did::Call::<Test>::update_key(key_update, sig));
             let (fee_microdock, executed) = measure_fees(call);
+            assert_ok!(executed);
 
             let pdi = executed.unwrap();
             assert!(pdi.pays_fee == Pays::No);
@@ -266,19 +247,19 @@ mod tests_did_calls {
     #[test]
     fn call_did_remove() {
         ext().execute_with(|| {
-            let did = [1; DID_BYTE_SIZE];
-            let (pair_1, _, _) = sr25519::Pair::generate_with_phrase(None);
-            let _pk_1 = pair_1.public().0;
+            let (did_alice, kp) = newdid(ALICE);
+            let blockno = block_no() as u32;
 
-            let to_remove = DidRemoval::new(did.clone(), 2u32);
+            let to_remove = DidRemoval::new(did_alice.clone(), blockno);
             let sig = DidSignature::Sr25519(Bytes64 {
-                value: pair_1
+                value: kp
                     .sign(&StateChange::DIDRemoval(to_remove.clone()).encode())
                     .0,
             });
 
             let (fee_microdock, executed) =
                 measure_fees(TestCall::DidMod(did::Call::<Test>::remove(to_remove, sig)));
+            assert_ok!(executed);
 
             let pdi = executed.unwrap();
             assert!(pdi.pays_fee == Pays::No);
@@ -297,6 +278,7 @@ fn call_anchor_deploy() {
 
         let (fee_microdock, executed) =
             measure_fees(TestCall::AnchorMod(anchor::Call::<Test>::deploy(dat)));
+        assert_ok!(executed);
 
         let pdi = executed.unwrap();
         assert!(pdi.pays_fee == Pays::No);
@@ -321,6 +303,7 @@ fn call_blob_new() {
 
         let call = TestCall::BlobMod(blob::Call::<Test>::new(blob, sig));
         let (fee_microdock, executed) = measure_fees(call);
+        assert_ok!(executed);
 
         let pdi = executed.unwrap();
         assert!(pdi.pays_fee == Pays::No);
@@ -335,22 +318,18 @@ mod tests_revoke_calls {
     use revoke::{Policy, Registry, RegistryId, RemoveRegistry, Revoke, RevokeId, UnRevoke};
 
     pub const REV_ID: RevokeId = [7u8; 32];
-    // pub const DID_ALICE: Did = [4u8; 32];
-    // pub const DID_BOB: Did = [5u8; 32];
 
     pub fn policy_oneof(dids: &[Did]) -> Policy {
         Policy::OneOf(dids.iter().cloned().collect())
-    }
-    pub fn block_no() -> u64 {
-        system::Module::<Test>::block_number()
     }
     pub fn new_reg(did: Did) -> (RegistryId, Registry) {
         pub const REG_ID: RegistryId = [3u8; 32];
         let reg = Registry {
             policy: policy_oneof(&[did]),
-            add_only: true,
+            add_only: false,
         };
-        RevokeMod::new_registry(Origin::signed(ALICE), REG_ID, reg.clone()).unwrap();
+        let created = RevokeMod::new_registry(Origin::signed(ALICE), REG_ID, reg.clone());
+        assert_ok!(created);
         (REG_ID, reg)
     }
 
@@ -381,12 +360,14 @@ mod tests_revoke_calls {
                 .collect();
 
                 let call = TestCall::RevokeMod(revoke::Call::<Test>::revoke(revoke, proof));
-
-                // assert!(ids
-                //     .iter()
-                //     .all(|id| Revocations::contains_key(registry_id, id)));
-
                 let (fee_microdock, executed) = measure_fees(call);
+                assert_ok!(executed);
+
+                // assert ids in registry
+                for rev_id in ids.iter() {
+                    let rev_status = RevokeMod::get_revocation_status(reg_id, rev_id);
+                    assert!(rev_status.is_some())
+                }
 
                 let pdi = executed.unwrap();
                 assert!(pdi.pays_fee == Pays::No);
@@ -401,7 +382,10 @@ mod tests_revoke_calls {
             let (did_alice, kp_alice) = newdid(ALICE);
             let (reg_id, _reg) = new_reg(did_alice);
             let last_modified = block_no() as u32;
-            // let revoke_ids: BTreeSet<RevokeId> = &[REV_ID].iter().cloned().collect();
+
+            // assert not revoked
+            let revoke_status = RevokeMod::get_revocation_status(reg_id, REV_ID);
+            assert_eq!(revoke_status, None);
 
             // 1. revoke
             let revoke = Revoke {
@@ -414,8 +398,13 @@ mod tests_revoke_calls {
                 sign(&StateChange::Revoke(revoke.clone()), &kp_alice),
             ))
             .collect();
-            RevokeMod::revoke(Origin::signed(ALICE), revoke.clone(), proof).unwrap();
-            // TODO assert revoked
+            let revoke_res = RevokeMod::revoke(Origin::signed(ALICE), revoke.clone(), proof);
+            assert_ok!(revoke_res);
+            // assert revoked
+            {
+                let revoke_status = RevokeMod::get_revocation_status(reg_id, REV_ID);
+                assert_eq!(revoke_status, Some(()));
+            }
 
             // 2. unrevoke
             let unrevoke = UnRevoke {
@@ -433,7 +422,11 @@ mod tests_revoke_calls {
             let (fee_microdock, executed) = measure_fees(call);
             assert_ok!(executed);
 
-            // TODO assert unrevoked
+            // assert unrevoked
+            {
+                let revoke_status = RevokeMod::get_revocation_status(reg_id, REV_ID);
+                assert_eq!(revoke_status, None);
+            }
 
             let pdi = executed.unwrap();
             assert!(pdi.pays_fee == Pays::No);
@@ -456,17 +449,19 @@ mod tests_revoke_calls {
                 let reg_id = random();
                 let reg = Registry { policy, add_only };
 
-                // assert!(!Registries::<Test>::contains_key(reg_id));
-                // RevokeMod::new_registry(Origin::signed(ALICE), reg_id, reg.clone()).unwrap();
+                let got_reg = <revoke::Module<Test>>::get_revocation_registry(reg_id);
+                assert!(got_reg.is_none());
 
-                let call = TestCall::RevokeMod(revoke::Call::<Test>::new_registry(reg_id, reg));
+                let call =
+                    TestCall::RevokeMod(revoke::Call::<Test>::new_registry(reg_id, reg.clone()));
                 let (fee_microdock, executed) = measure_fees(call);
                 assert_ok!(executed);
 
-                // assert!(Registries::<Test>::contains_key(reg_id));
-                // let (created_reg, created_bloc) = Registries::<Test>::get(reg_id).unwrap();
-                // assert_eq!(created_reg, reg);
-                // assert_eq!(created_bloc, block_no());
+                let got_reg = <revoke::Module<Test>>::get_revocation_registry(reg_id);
+                assert!(got_reg.is_some());
+                let (created_reg, created_bloc) = got_reg.unwrap();
+                assert_eq!(created_reg, reg);
+                assert_eq!(created_bloc, block_no());
 
                 let pdi = executed.unwrap();
                 assert!(pdi.pays_fee == Pays::No);
@@ -497,8 +492,9 @@ mod tests_revoke_calls {
             let (fee_microdock, executed) = measure_fees(call);
             assert_ok!(executed);
 
-            // assert not exists
-            // assert!(!Registries::<Test>::contains_key(registry_id));
+            // assert registry removed
+            let got_reg = RevokeMod::get_revocation_registry(reg_id);
+            assert_eq!(got_reg, None);
 
             let pdi = executed.unwrap();
             assert!(pdi.pays_fee == Pays::No);
@@ -528,7 +524,6 @@ mod tests_root_calls {
             // Ensure the expected error is thrown when no value is present.
             assert_noop!(
                 FiatFilterModule::root_set_update_freq(Origin::signed(ALICE), 42u64),
-                // Error::<Test>::NoneValue
                 DispatchError::BadOrigin
             );
         });
@@ -558,7 +553,6 @@ mod tests_root_calls {
             // Ensure the expected error is thrown when no value is present.
             assert_noop!(
                 FiatFilterModule::root_set_update_freq(Origin::signed(ALICE), 42u64),
-                // Error::<Test>::NoneValue
                 DispatchError::BadOrigin
             );
         });
