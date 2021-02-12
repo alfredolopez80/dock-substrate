@@ -1155,7 +1155,7 @@ dependencies = [
 
 [[package]]
 name = "dock-node"
-version = "0.12.3"
+version = "0.13.0"
 dependencies = [
  "dock-runtime",
  "fc-consensus",
@@ -1207,7 +1207,7 @@ dependencies = [
 
 [[package]]
 name = "dock-runtime"
-version = "0.12.3"
+version = "0.13.0"
 dependencies = [
  "core_mods",
  "fiat_filter",
