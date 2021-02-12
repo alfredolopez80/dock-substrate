@@ -1,25 +1,19 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-#![allow(unused_imports)] // TODO remove
 
-use core_mods::did::KeyDetail;
 use core_mods::{anchor, blob, did, revoke};
 use frame_support::{
     decl_error, decl_event, decl_module, decl_storage,
     dispatch::{
-        CallMetadata, DispatchErrorWithPostInfo, DispatchResult, DispatchResultWithPostInfo,
-        Dispatchable, GetCallMetadata, PostDispatchInfo,
+        DispatchErrorWithPostInfo, DispatchResult, DispatchResultWithPostInfo, Dispatchable,
+        PostDispatchInfo,
     },
-    ensure,
-    sp_runtime::{DispatchError, Perbill, Permill},
-    traits::{
-        Currency, ExistenceRequirement, Get, IsSubType, UnfilteredDispatchable, WithdrawReasons,
-    },
+    sp_runtime::{Perbill, Permill},
+    traits::{Currency, ExistenceRequirement, Get, IsSubType, WithdrawReasons},
     weights::{GetDispatchInfo, Pays, Weight},
     Parameter,
 };
 use frame_system::{self as system, ensure_root, ensure_signed};
 use sp_std::boxed::Box;
-use sp_std::fmt::Debug;
 
 #[cfg(test)]
 #[allow(non_snake_case)]
@@ -33,13 +27,6 @@ pub trait UpdaterDockFiatRate {
 
 // /// The pallet's configuration trait
 // /// Configure the pallet by specifying the parameters and types on which it depends.
-// pub trait Config: frame_system::Config {
-//     /// Because this pallet emits events, it depends on the runtime's definition of an event.
-//     type Event: From<Event> + Into<<Self as frame_system::Config>::Event>;
-//     // type Call: Parameter + UnfilteredDispatchable<Origin = Self::Origin> + GetDispatchInfo;
-//     type UpdaterDockFiatRate: UpdaterDockFiatRate;
-//     // type BlockNumber: Get<<Self as frame_system::Config>::BlockNumber>;
-// }
 pub trait Config:
     system::Config + did::Trait + anchor::Trait + blob::Trait + revoke::Trait
 {
@@ -57,7 +44,6 @@ pub trait Config:
         + IsSubType<anchor::Call<Self>>
         + IsSubType<blob::Call<Self>>
         + IsSubType<revoke::Call<Self>>;
-    // + GetCallMetadata;
     /// The module's Currency type definition
     type Currency: Currency<Self::AccountId>;
 }
@@ -125,7 +111,6 @@ decl_module! {
         #[weight = (10_000 + T::DbWeight::get().writes(1), Pays::No)]
         pub fn execute_call(origin, call: Box<<T as Config>::Call>) -> DispatchResultWithPostInfo {
             Self::execute_call_(origin, &call)?;
-            // return Pays::No in PostDispatchInfo
             Ok(Pays::No.into())
         }
 
@@ -138,7 +123,6 @@ decl_module! {
             UpdateFreq::<T>::put(new_update_freq);
             // Emit an event.
             Self::deposit_event(RawEvent::UpdateFreqUpdated(new_update_freq));
-            // Return a successful DispatchResult
             Ok(())
         }
 
@@ -210,20 +194,12 @@ impl<T: Config> Module<T> {
     }
 
     fn charge_fees_(who: T::AccountId, amount: BalanceOf<T>) -> Result<(), &'static str> {
-        // let balance_pre = <T as Config>::Currency::free_balance(&who); // TODO rm
         let _ = <T::Currency>::withdraw(
             &who,
             amount,
             WithdrawReasons::FEE,
             ExistenceRequirement::KeepAlive,
         )?;
-        // let balance_post = <T as Config>::Currency::free_balance(&who); // TODO rm
-        // dbg!(
-        //     amount,
-        //     balance_pre,
-        //     balance_post,
-        //     balance_pre - balance_post
-        // );
         Ok(())
     }
 
@@ -256,8 +232,6 @@ impl<T: Config> Module<T> {
                 })
             }
         };
-
-        // Ok(Pays::No.into())
     }
 }
 

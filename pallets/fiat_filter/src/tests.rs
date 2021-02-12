@@ -1,10 +1,8 @@
 use crate::*;
-use codec::{Decode, Encode};
+use codec::Encode;
 use core_mods::{anchor, did};
 
-use frame_support::dispatch::Dispatchable;
-use frame_support::weights::Weight;
-use frame_support::{impl_outer_dispatch, impl_outer_event, impl_outer_origin, parameter_types};
+use frame_support::{impl_outer_dispatch, impl_outer_origin, parameter_types};
 use frame_system as system;
 use rand::random;
 use sp_core::H256;
@@ -177,7 +175,9 @@ use frame_system::RawOrigin;
 
 mod tests_did_calls {
     use super::*;
-    use did::{Bytes32, Bytes64, DidRemoval, DidSignature, KeyUpdate, PublicKey, DID_BYTE_SIZE};
+    use did::{
+        Bytes32, Bytes64, DidRemoval, DidSignature, KeyDetail, KeyUpdate, PublicKey, DID_BYTE_SIZE,
+    };
 
     #[test]
     fn call_did_new() {
@@ -506,6 +506,7 @@ mod tests_revoke_calls {
 
 mod tests_root_calls {
     use super::*;
+    use frame_support::dispatch::DispatchError;
 
     #[test]
     fn root_set_update_freq__OK() {
