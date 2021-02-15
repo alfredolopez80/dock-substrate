@@ -559,3 +559,51 @@ mod tests_root_calls {
         });
     }
 }
+
+mod test_fail_modes {
+    use super::*;
+    use anchor;
+    use frame_support::dispatch::DispatchError;
+
+    #[test]
+    fn anchor_new__Err_no_balance() {
+        ext().execute_with(|| {
+            // empty alice's balance
+            let _ = <Test as Config>::Currency::make_free_balance_be(&ALICE, 0);
+            // prepare data
+            let dat = (0..32).map(|_| rand::random()).collect();
+            // execute call
+            let (_fee_microdock, executed) =
+                measure_fees(TestCall::AnchorMod(anchor::Call::<Test>::deploy(dat)));
+            assert_noop!(
+                executed,
+                DispatchError::Module {
+                    index: 0,
+                    error: 3,
+                    message: Some("InsufficientBalance")
+                },
+            );
+        });
+    }
+
+    #[test]
+    fn anchor_new__Err_insufficient_balance() {
+        ext().execute_with(|| {
+            // reduce alice's balance to just under the required fee
+            let _ = <Test as Config>::Currency::make_free_balance_be(&ALICE, 26653490);
+            // prepare data
+            let dat = (0..32).map(|_| rand::random()).collect();
+            // execute call
+            let (_fee_microdock, executed) =
+                measure_fees(TestCall::AnchorMod(anchor::Call::<Test>::deploy(dat)));
+            assert_noop!(
+                executed,
+                DispatchError::Module {
+                    index: 0,
+                    error: 3,
+                    message: Some("InsufficientBalance")
+                },
+            );
+        });
+    }
+}

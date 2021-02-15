@@ -4,8 +4,8 @@ use core_mods::{anchor, blob, did, revoke};
 use frame_support::{
     decl_error, decl_event, decl_module, decl_storage,
     dispatch::{
-        DispatchErrorWithPostInfo, DispatchResult, DispatchResultWithPostInfo, Dispatchable,
-        PostDispatchInfo,
+        DispatchError, DispatchErrorWithPostInfo, DispatchResult, DispatchResultWithPostInfo,
+        Dispatchable, PostDispatchInfo,
     },
     sp_runtime::{Perbill, Permill},
     traits::{Currency, ExistenceRequirement, Get, IsSubType, WithdrawReasons},
@@ -80,10 +80,8 @@ decl_event! {
 // Errors inform users that something went wrong.
 decl_error! {
     pub enum Error for Module<T: Config> {
-        /// Error names should be descriptive.
-        NoneValue,
-        /// Errors should have helpful documentation associated with them.
-        StorageOverflow,
+        /// Failed calculation because of numeric type overflow
+        ArithmeticOverflow,
     }
 }
 
@@ -135,8 +133,6 @@ decl_module! {
             // on storage updated, emit an event
             Self::deposit_event(RawEvent::DockFiatRateUpdated(value));
 
-            // example of returning a custom err
-            // Err(Error::<T>::NoneValue)?,
             Ok(())
         }
     }
@@ -173,7 +169,7 @@ impl<T: Config> Module<T> {
         };
         return Permill::from_percent(500);
     }
-    fn compute_call_fee_dock_(call: &<T as Config>::Call) -> Result<BalanceOf<T>, &'static str> {
+    fn compute_call_fee_dock_(call: &<T as Config>::Call) -> Result<BalanceOf<T>, DispatchError> {
         use sp_std::convert::TryInto;
         let fee_fiat_permill: AmountUsd = Self::get_call_fee_fiat_(call);
         let fee_fiat_perbill: u32 = fee_fiat_permill.deconstruct() * 1000;
@@ -184,7 +180,7 @@ impl<T: Config> Module<T> {
             .ok_or("checked_div err: divide by dock_fiat_rate_perbill=0")?;
         let fee_dock_permill_u32: u32 = fee_dock_permill_u64
             .try_into()
-            .or(Err("fee_dock_permill: u32 overflow"))?;
+            .or(Err(Error::<T>::ArithmeticOverflow))?;
 
         // The token has 6 decimal places (defined in the runtime)
         // pub const DOCK: Balance = 1_000_000;
@@ -193,7 +189,7 @@ impl<T: Config> Module<T> {
         Ok(fee_microdock)
     }
 
-    fn charge_fees_(who: T::AccountId, amount: BalanceOf<T>) -> Result<(), &'static str> {
+    fn charge_fees_(who: T::AccountId, amount: BalanceOf<T>) -> Result<(), DispatchError> {
         let _ = <T::Currency>::withdraw(
             &who,
             amount,
