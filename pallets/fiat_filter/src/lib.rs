@@ -82,6 +82,8 @@ decl_error! {
     pub enum Error for Module<T: Config> {
         /// Failed calculation because of numeric type overflow
         ArithmeticOverflow,
+        /// checked_div: tried to divide by zero
+        DivideByZero,
     }
 }
 
@@ -89,8 +91,8 @@ decl_error! {
 // Dispatchable functions must be annotated with a weight and must return a DispatchResult.
 decl_module! {
     pub struct Module<T: Config> for enum Call where origin: T::Origin {
-        // // Errors must be initialized if they are used by the pallet.
-        // type Error = Error<T>;
+        // Errors must be initialized if they are used by the pallet.
+        type Error = Error<T>; // TODO still works if commented-out. Why ?
         // Events must be initialized if they are used by the pallet.
         fn deposit_event() = default;
         /// `on_initialize` gets called on every new block
@@ -115,7 +117,6 @@ decl_module! {
         /// Set the Update Frequency through Root
         #[weight = 10_000 + T::DbWeight::get().writes(1)]
         pub fn root_set_update_freq(origin, new_update_freq: T::BlockNumber) -> DispatchResult {
-            // ensure!(sender == system::RawOrigin::Root.into(), "only Root can force-update the update frequency");
             ensure_root(origin)?;
             // Update storage.
             UpdateFreq::<T>::put(new_update_freq);
@@ -177,7 +178,7 @@ impl<T: Config> Module<T> {
         let dock_fiat_rate_perbill: u32 = Self::dock_fiat_rate().deconstruct();
         let fee_dock_permill_u64: u64 = (fee_fiat_perbill as u64 * 1_000_000_u64)
             .checked_div(dock_fiat_rate_perbill as u64)
-            .ok_or("checked_div err: divide by dock_fiat_rate_perbill=0")?;
+            .ok_or(Error::<T>::DivideByZero)?;
         let fee_dock_permill_u32: u32 = fee_dock_permill_u64
             .try_into()
             .or(Err(Error::<T>::ArithmeticOverflow))?;
@@ -200,8 +201,9 @@ impl<T: Config> Module<T> {
     }
 
     fn execute_call_(origin: T::Origin, call: &<T as Config>::Call) -> DispatchResultWithPostInfo {
-        let sender = ensure_signed(origin.clone())?;
         let weight = call.get_dispatch_info().weight;
+        // check signature before charging any fees
+        let sender = ensure_signed(origin.clone())?;
 
         // calculate fee based on type of call
         let fee_dock = Self::compute_call_fee_dock_(&call)?;

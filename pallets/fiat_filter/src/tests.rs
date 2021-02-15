@@ -560,7 +560,7 @@ mod tests_root_calls {
     }
 }
 
-mod test_fail_modes {
+mod tests_fail_modes {
     use super::*;
     use anchor;
     use frame_support::dispatch::DispatchError;
@@ -604,6 +604,92 @@ mod test_fail_modes {
                     message: Some("InsufficientBalance")
                 },
             );
+        });
+    }
+
+    #[test]
+    fn anchor_new__Err_overflow() {
+        ext().execute_with(|| {
+            // set the dock_fiat_rate to the minimum to trigger overflow
+            let executed = FiatFilterModule::root_set_dock_fiat_rate(
+                RawOrigin::Root.into(),
+                Perbill::from_parts(1),
+            );
+            assert_ok!(executed);
+            // prepare data
+            let dat = (0..32).map(|_| rand::random()).collect();
+            // execute call
+            let (_fee_microdock, executed) =
+                measure_fees(TestCall::AnchorMod(anchor::Call::<Test>::deploy(dat)));
+            assert_noop!(executed, Error::<Test>::ArithmeticOverflow);
+        });
+    }
+
+    #[test]
+    fn anchor_new__Err_div_by_zero() {
+        ext().execute_with(|| {
+            // set the dock_fiat_rate to zero to trigger divide error
+            let executed = FiatFilterModule::root_set_dock_fiat_rate(
+                RawOrigin::Root.into(),
+                Perbill::from_parts(0),
+            );
+            assert_ok!(executed);
+            // prepare data
+            let dat = (0..32).map(|_| rand::random()).collect();
+            // execute call
+            let (_fee_microdock, executed) =
+                measure_fees(TestCall::AnchorMod(anchor::Call::<Test>::deploy(dat)));
+            assert_noop!(executed, Error::<Test>::DivideByZero);
+        });
+    }
+
+    #[test]
+    fn anchor_new__Err_unsigned() {
+        ext().execute_with(|| {
+            // prepare data
+            let dat = (0..32).map(|_| rand::random()).collect();
+
+            // execute call
+            let balance_pre = <Test as Config>::Currency::free_balance(ALICE);
+            let call = TestCall::AnchorMod(anchor::Call::<Test>::deploy(dat));
+            let executed =
+                FiatFilterModule::execute_call(RawOrigin::None.into(), Box::new(call.clone()));
+            let balance_post = <Test as Config>::Currency::free_balance(ALICE);
+            let fee_microdock = balance_pre - balance_post;
+
+            assert_noop!(executed, DispatchError::BadOrigin);
+
+            // the call signature isn't valid, we can't charge the account any fees
+            assert_eq!(fee_microdock, 0);
+        });
+    }
+}
+
+mod tests_dock_fiat_rate {
+    use super::*;
+    use anchor;
+
+    #[test]
+    fn call_anchor_deploy__OK_different_rate() {
+        ext().execute_with(|| {
+            // set the dock_fiat_rate to zero to trigger divide error
+            let executed = FiatFilterModule::root_set_dock_fiat_rate(
+                RawOrigin::Root.into(),
+                Perbill::from_parts(100_000_000),
+            );
+            assert_ok!(executed);
+
+            // prepare data and call
+            let dat = (0..32).map(|_| rand::random()).collect();
+            let call = TestCall::AnchorMod(anchor::Call::<Test>::deploy(dat));
+
+            let (fee_microdock, executed) = measure_fees(call);
+            assert_ok!(executed);
+
+            let pdi = executed.unwrap();
+            assert!(pdi.pays_fee == Pays::No);
+            const _60_CENTS: u64 = 6000000; // at the new rate
+            assert_eq!(fee_microdock, _60_CENTS);
         });
     }
 }
