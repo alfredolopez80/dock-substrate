@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["dock_runtime"] = [{"text":"impl&lt;T&gt; WeightToFeePolynomial for TxnFee&lt;T&gt; <span class=\"where fmt-newline\">where<br>&nbsp;&nbsp;&nbsp;&nbsp;T: BaseArithmetic + From&lt;u32&gt; + Copy + Unsigned,&nbsp;</span>","synthetic":false,"types":[]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()
