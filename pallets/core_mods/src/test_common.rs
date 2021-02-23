@@ -15,7 +15,6 @@ use sp_core::{sr25519, Pair, H256};
 use sp_runtime::{
     testing::Header,
     traits::{BlakeTwo256, IdentityLookup},
-    Perbill,
 };
 pub use std::iter::once;
 
@@ -136,10 +135,12 @@ impl crate::revoke::Trait for Test {}
 
 parameter_types! {
     pub const MaxBlobSize: u32 = 1024;
+    pub const StorageWeight: Weight = 1100;
 }
 
 impl crate::blob::Trait for Test {
     type MaxBlobSize = MaxBlobSize;
+    type StorageWeight = StorageWeight;
 }
 
 impl crate::master::Trait for Test {
@@ -149,6 +150,10 @@ impl crate::master::Trait for Test {
 
 impl crate::anchor::Trait for Test {
     type Event = TestEvent;
+}
+
+impl crate::attest::Trait for Test {
+    type StorageWeight = StorageWeight;
 }
 
 pub const ABBA: u64 = 0;

@@ -132,6 +132,10 @@
     "r": "H256",
     "s": "H256"
   },
+  "Attestation": {
+    "priority": "Compact<u64>",
+    "iri": "Option<Vec<u8>>"
+  },
   "StateChange": {
     "_enum": {
       "KeyUpdate": "KeyUpdate",
@@ -140,7 +144,8 @@
       "UnRevoke": "UnRevoke",
       "RemoveRegistry": "RemoveRegistry",
       "Blob": "Blob",
-      "MasterVote": "Payload"
+      "MasterVote": "Payload",
+      "Attestation": "(Did, Attestation)"
     }
   }
 }

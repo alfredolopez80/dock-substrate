@@ -6,7 +6,7 @@ use frame_support::{
     parameter_types,
     sp_runtime::{
         testing::{Header, UintAuthorityId},
-        traits::{BlakeTwo256, Block as BlockT, Dispatchable, Hash, IdentityLookup, OpaqueKeys},
+        traits::{BlakeTwo256, Dispatchable, Hash, IdentityLookup, OpaqueKeys},
         BuildStorage, KeyTypeId, Perbill,
     },
     traits::OnInitialize,

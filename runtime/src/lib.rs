@@ -22,10 +22,12 @@ extern crate alloc;
 extern crate static_assertions;
 
 pub use core_mods::anchor;
+pub use core_mods::attest;
 pub use core_mods::blob;
 pub use core_mods::did;
 pub use core_mods::master;
 pub use core_mods::revoke;
+
 pub mod weight_to_fee;
 
 pub use poa;
@@ -330,10 +332,12 @@ impl revoke::Trait for Runtime {}
 
 parameter_types! {
     pub const MaxBlobSize: u32 = 1024;
+    pub const StorageWeight: Weight = 1100;
 }
 
 impl blob::Trait for Runtime {
     type MaxBlobSize = MaxBlobSize;
+    type StorageWeight = StorageWeight;
 }
 
 impl pallet_session::Config for Runtime {
@@ -404,6 +408,10 @@ impl sudo::Config for Runtime {
 
 impl anchor::Trait for Runtime {
     type Event = Event;
+}
+
+impl attest::Trait for Runtime {
+    type StorageWeight = StorageWeight;
 }
 
 /// This origin indicates that either >50% (simple majority) of Council members approved some dispatch (through a proposal)
@@ -650,6 +658,7 @@ construct_runtime!(
         Sudo: sudo::{Module, Call, Storage, Event<T>, Config<T>},
         MigrationModule: token_migration::{Module, Call, Storage, Event<T>},
         Anchor: anchor::{Module, Call, Storage, Event<T>},
+        Attest: attest::{Module, Call, Storage},
         SimpleDemocracy: simple_democracy::{Module, Call, Event},
         Democracy: pallet_democracy::{Module, Call, Storage, Event<T>},
         Council: pallet_collective::<Instance1>::{Module, Call, Storage, Origin<T>, Event<T>, Config<T>},
